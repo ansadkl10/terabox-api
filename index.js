@@ -7,56 +7,77 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 /* ================================
-   MULTI-API TERABOX FUNCTION
+   PROXY-BASED TERABOX FUNCTION
 ================================ */
 const terabox = async (url) => {
-  let errorLog = [];
+  let errors = [];
 
-  // --- METHOD 1: Ryzendesu API ---
-  try {
-    console.log("Trying API 1...");
-    const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/terabox?url=${url}`, {
-      timeout: 10000 // 10s timeout
-    });
+  // API ലിസ്റ്റ് (ഈ API-കൾ നേരിട്ട് വിളിച്ചാൽ ബ്ലോക്ക് ആകും, അതുകൊണ്ട് Proxy വഴി വിളിക്കുന്നു)
+  const apis = [
+    `https://teraboxvideodownloader.nepcoderdevs.workers.dev/?url=${url}`,
+    `https://terabox-dl.qtcloud.workers.dev/api/get-info?shorturl=${url.split('/').pop()}`,
+    `https://terabox.khmn.app/api/resolve?url=${url}`
+  ];
 
-    if (data.status && data.data) {
-      return {
-        server: "API-1",
-        file_name: data.data.filename || "Terabox File",
-        size: data.data.size || "Unknown",
-        d_link: data.data.url || data.data.dlink,
-        fast_download: data.data.hd_url
-      };
+  // Web Proxies (ഇവ Host IP Block മാറ്റാൻ സഹായിക്കും)
+  const proxies = [
+    "https://corsproxy.io/?", 
+    "https://api.allorigins.win/raw?url=",
+    "" // Direct attempt (Last try)
+  ];
+
+  // Loop through APIs and Proxies
+  for (const api of apis) {
+    for (const proxy of proxies) {
+      try {
+        const fullUrl = proxy ? `${proxy}${encodeURIComponent(api)}` : api;
+        console.log(`Trying: ${proxy ? "Proxy -> " : "Direct -> "} ${new URL(api).hostname}`);
+        
+        const { data } = await axios.get(fullUrl, {
+          timeout: 10000,
+          headers: {
+            // Browser പോലെ തോന്നിക്കാൻ User-Agent മാറ്റുന്നു
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        });
+
+        // 1. NepCoder Response Check
+        if (data?.data?.file) {
+          return {
+            server: "NepCoder",
+            file_name: data.data.file.title,
+            size: data.data.file.totalSize,
+            d_link: data.data.file.url,
+            thumb: data.data.file.thumbnail
+          };
+        }
+
+        // 2. QtCloud Response Check
+        if (data?.downloadLink) {
+          return {
+            server: "QtCloud",
+            file_name: data.filename,
+            size: data.size,
+            d_link: data.downloadLink
+          };
+        }
+
+        // 3. Khmn Response Check
+        if (data?.download_link) {
+          return {
+            server: "Khmn",
+            file_name: data.filename,
+            d_link: data.download_link
+          };
+        }
+
+      } catch (e) {
+        // Just continue to next proxy
+      }
     }
-  } catch (e) {
-    console.log("API 1 Failed:", e.message);
-    errorLog.push(`API 1: ${e.message}`);
   }
 
-  // --- METHOD 2: GuruAPI (Backup) ---
-  try {
-    console.log("Trying API 2 (Backup)...");
-    const { data } = await axios.get(`https://www.guruapi.tech/api/terabox?url=${url}`, {
-      timeout: 15000
-    });
-
-    // GuruAPI response structure check
-    if (data.success && data.result) {
-      return {
-        server: "API-2",
-        file_name: data.result.fileName || "Terabox File",
-        size: data.result.size || "Unknown",
-        d_link: data.result.url,
-        note: "Link usually expires in 10-15 mins"
-      };
-    }
-  } catch (e) {
-    console.log("API 2 Failed:", e.message);
-    errorLog.push(`API 2: ${e.message}`);
-  }
-
-  // If all failed
-  throw new Error(`All APIs failed. Errors: ${errorLog.join(", ")}`);
+  throw new Error("All Proxies Failed. Server IP is strictly blocked.");
 };
 
 /* ================================
@@ -65,35 +86,16 @@ const terabox = async (url) => {
 app.get("/api/terabox", async (req, res) => {
   try {
     const url = req.query.url;
-
-    if (!url) {
-      return res.status(400).json({
-        status: false,
-        message: "Provide Terabox url using ?url="
-      });
-    }
+    if (!url) return res.status(400).json({ status: false, message: "Url missing" });
 
     const result = await terabox(url);
-
-    res.json({
-      status: true,
-      creator: "Akshay-Eypz",
-      result: result
-    });
+    res.json({ status: true, creator: "Akshay-Eypz", result });
 
   } catch (err) {
-    res.status(500).json({
-      status: false,
-      message: err.message
-    });
+    res.status(500).json({ status: false, message: "Failed", error: err.message });
   }
 });
 
-// Home Route
-app.get("/", (req, res) => {
-  res.send("Terabox Downloader API (Multi-Server) is Running...");
-});
+app.get("/", (req, res) => res.send("Terabox Proxy API Running"));
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
