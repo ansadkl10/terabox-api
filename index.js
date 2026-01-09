@@ -7,77 +7,76 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 /* ================================
-   PROXY-BASED TERABOX FUNCTION
+   NEW STRATEGY TERABOX FUNCTION
 ================================ */
 const terabox = async (url) => {
   let errors = [];
 
-  // API ലിസ്റ്റ് (ഈ API-കൾ നേരിട്ട് വിളിച്ചാൽ ബ്ലോക്ക് ആകും, അതുകൊണ്ട് Proxy വഴി വിളിക്കുന്നു)
-  const apis = [
-    `https://teraboxvideodownloader.nepcoderdevs.workers.dev/?url=${url}`,
-    `https://terabox-dl.qtcloud.workers.dev/api/get-info?shorturl=${url.split('/').pop()}`,
-    `https://terabox.khmn.app/api/resolve?url=${url}`
-  ];
-
-  // Web Proxies (ഇവ Host IP Block മാറ്റാൻ സഹായിക്കും)
-  const proxies = [
-    "https://corsproxy.io/?", 
-    "https://api.allorigins.win/raw?url=",
-    "" // Direct attempt (Last try)
-  ];
-
-  // Loop through APIs and Proxies
-  for (const api of apis) {
-    for (const proxy of proxies) {
-      try {
-        const fullUrl = proxy ? `${proxy}${encodeURIComponent(api)}` : api;
-        console.log(`Trying: ${proxy ? "Proxy -> " : "Direct -> "} ${new URL(api).hostname}`);
-        
-        const { data } = await axios.get(fullUrl, {
-          timeout: 10000,
-          headers: {
-            // Browser പോലെ തോന്നിക്കാൻ User-Agent മാറ്റുന്നു
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          }
-        });
-
-        // 1. NepCoder Response Check
-        if (data?.data?.file) {
-          return {
-            server: "NepCoder",
-            file_name: data.data.file.title,
-            size: data.data.file.totalSize,
-            d_link: data.data.file.url,
-            thumb: data.data.file.thumbnail
-          };
-        }
-
-        // 2. QtCloud Response Check
-        if (data?.downloadLink) {
-          return {
-            server: "QtCloud",
-            file_name: data.filename,
-            size: data.size,
-            d_link: data.downloadLink
-          };
-        }
-
-        // 3. Khmn Response Check
-        if (data?.download_link) {
-          return {
-            server: "Khmn",
-            file_name: data.filename,
-            d_link: data.download_link
-          };
-        }
-
-      } catch (e) {
-        // Just continue to next proxy
+  // 1. AA.XO.MU API (ഏറ്റവും പുതിയത്, മിക്കവാറും വർക്ക് ആകും)
+  try {
+    console.log("Trying Method 1 (AA.XO.MU)...");
+    const { data } = await axios.get(`https://aa.xo.mu/api/video?url=${url}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
       }
+    });
+
+    if (data && data.url) {
+      return {
+        server: "AA.XO.MU",
+        file_name: data.filename || "Terabox Video",
+        size: data.size || "Unknown",
+        d_link: data.url,
+        thumb: data.thumb
+      };
     }
+  } catch (e) {
+    errors.push(`Method 1 Failed: ${e.message}`);
   }
 
-  throw new Error("All Proxies Failed. Server IP is strictly blocked.");
+  // 2. INDOWN.IO LOGIC (POST Request via Proxy)
+  try {
+    console.log("Trying Method 2 (InDown)...");
+    // Using CodeTabs Proxy (More powerful than corsproxy)
+    const proxyUrl = "https://api.codetabs.com/v1/proxy?quest=";
+    const targetUrl = "https://indown.io/download";
+    
+    // First, we need to check link (Simplified logic for now)
+    // Note: InDown often requires cookies, skipping complex scrape for now.
+    // Switching to 'Pickle' API logic via Proxy
+    
+    const { data } = await axios.get(`${proxyUrl}https://terabox-dl.qtcloud.workers.dev/api/get-info?shorturl=${url.split('/').pop()}`);
+    
+    if (data && data.downloadLink) {
+       return {
+        server: "QtCloud-Proxy",
+        file_name: data.filename,
+        size: data.size,
+        d_link: data.downloadLink
+      };
+    }
+
+  } catch (e) {
+    errors.push(`Method 2 Failed: ${e.message}`);
+  }
+
+  // 3. RAPID-API FREE TIER (Fallback)
+  // If user has a key, they can add it. Trying a public endpoint.
+  try {
+     console.log("Trying Method 3 (Hera)...");
+     const { data } = await axios.get(`https://era-tera.cw.backend.heradown.com/api/tera?url=${url}`);
+     if (data && data.url) {
+         return {
+             server: "Hera",
+             file_name: data.filename || "File",
+             d_link: data.url
+         };
+     }
+  } catch (e) {
+      errors.push(`Method 3 Failed: ${e.message}`);
+  }
+
+  throw new Error(`Koyeb IP is fully blocked. Try running locally. Errors: ${errors.join(" | ")}`);
 };
 
 /* ================================
@@ -92,10 +91,11 @@ app.get("/api/terabox", async (req, res) => {
     res.json({ status: true, creator: "Akshay-Eypz", result });
 
   } catch (err) {
+    console.error(err.message); // Log to console
     res.status(500).json({ status: false, message: "Failed", error: err.message });
   }
 });
 
-app.get("/", (req, res) => res.send("Terabox Proxy API Running"));
+app.get("/", (req, res) => res.send("Terabox Final API Running"));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
