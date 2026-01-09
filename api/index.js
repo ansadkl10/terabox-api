@@ -9,10 +9,10 @@ app.use(express.json());
    VERCEL OPTIMIZED FUNCTION
 ================================ */
 const terabox = async (url) => {
-  // Method 1: GuruAPI (Fast & Reliable)
+  // Method 1: GuruAPI (Currently Working)
   try {
     const { data } = await axios.get(`https://www.guruapi.tech/api/terabox?url=${url}`, {
-      timeout: 8000 // Vercel has 10s limit, so keeping it 8s
+      timeout: 8000 // Vercel Timeout limit
     });
 
     if (data.success && data.result && data.result.url) {
@@ -21,7 +21,7 @@ const terabox = async (url) => {
         file_name: data.result.fileName || "Terabox File",
         size: data.result.size || "Unknown",
         d_link: data.result.url,
-        note: "Link usually expires in 10-15 mins"
+        note: "Link expires in 10 mins"
       };
     }
   } catch (e) {
@@ -45,7 +45,7 @@ const terabox = async (url) => {
     console.log("Rull API Failed:", e.message);
   }
 
-  throw new Error("Server Busy or Link Expired. Try again.");
+  throw new Error("All APIs are busy. Please try again.");
 };
 
 /* ================================
@@ -58,7 +58,7 @@ app.get("/api/terabox", async (req, res) => {
 
     const result = await terabox(url);
     
-    // Cache Control (Optional: to make it faster)
+    // Cache Control for speed
     res.setHeader('Cache-Control', 's-maxage=10, stale-while-revalidate');
     
     res.json({ status: true, creator: "Akshay-Eypz", result });
@@ -68,8 +68,7 @@ app.get("/api/terabox", async (req, res) => {
   }
 });
 
-app.get("/", (req, res) => res.send("Terabox API Running on Vercel"));
+app.get("/", (req, res) => res.send("Terabox API Vercel Running"));
 
-// Vercel needs this export, NOT app.listen
+// Vercel-ൽ app.listen ആവശ്യമില്ല, ഇത് നിർബന്ധമാണ്:
 export default app;
-        
