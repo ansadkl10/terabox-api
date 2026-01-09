@@ -7,66 +7,38 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 /* ================================
-   TERABOX LOGIC FUNCTION
+   NEW TERABOX FUNCTION (Mirror API)
 ================================ */
 const terabox = async (url) => {
-  if (!url) throw new Error("Terabox URL is required");
-
-  // FIX: This string must be on a SINGLE LINE without enter/return
-  const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
   try {
-    // Step 1: Solve Cloudflare Turnstile
-    const { data: cf } = await axios.post(
-      "https://api.nekolabs.web.id/tools/bypass/cf-turnstile",
-      {
-        url: "https://teraboxdl.site/",
-        siteKey: "0x4AAAAAACG0B7jzIiua8JFj"
+    // Using a different provider API to bypass Koyeb IP block
+    // Provider: Ryzendesu API (Free Tier)
+    const apiUrl = `https://api.ryzendesu.vip/api/downloader/terabox?url=${url}`;
+    
+    const { data } = await axios.get(apiUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       },
-      { headers: { "content-type": "application/json" } }
-    );
+      timeout: 30000 // 30 seconds timeout
+    });
 
-    if (!cf?.result) throw new Error("Failed to solve Turnstile");
-
-    // Step 2: Request teraboxdl proxy
-    const { data } = await axios.post(
-      "https://teraboxdl.site/api/proxy",
-      {
-        url: url,
-        cf_token: cf.result
-      },
-      {
-        headers: {
-          authority: "teraboxdl.site",
-          accept: "*/*",
-          "content-type": "application/json",
-          origin: "https://teraboxdl.site",
-          referer: "https://teraboxdl.site/",
-          "user-agent": userAgent
-        },
-        timeout: 30000
-      }
-    );
-
-    if (!data?.list || !data.list.length) {
-      throw new Error("No files found or Link expired");
+    // Check if the API returned a valid result
+    if (!data || !data.status) {
+      throw new Error("API failed to fetch data");
     }
 
-    const file = data.list[0];
-
+    // Adjusting response to your format
     return {
-      file_name: file.server_filename || file.path?.replace("/", ""),
-      size: file.size,
-      d_link: file.dlink,
-      headers: {
-        "User-Agent": userAgent,
-        "Referer": "https://terabox.com/"
-      }
+      file_name: data.data.filename || "Unknown File",
+      size: data.data.size || "Unknown",
+      d_link: data.data.url || data.data.dlink, // Direct Download Link
+      thumb: data.data.thumb,
+      fast_download: data.data.hd_url // Sometimes HD link is faster
     };
 
   } catch (error) {
-    console.error("Internal Error:", error.message);
-    throw error;
+    console.error("API Error:", error.message);
+    throw new Error("Failed to fetch link. The file might be deleted or the API is busy.");
   }
 };
 
@@ -76,18 +48,35 @@ const terabox = async (url) => {
 app.get("/api/terabox", async (req, res) => {
   try {
     const url = req.query.url;
-    if (!url) return res.status(400).json({ status: false, message: "Provide url" });
+
+    if (!url) {
+      return res.status(400).json({
+        status: false,
+        message: "Provide Terabox url using ?url="
+      });
+    }
 
     const result = await terabox(url);
-    res.json({ status: true, creator: "Akshay-Eypz", result: result });
+
+    res.json({
+      status: true,
+      creator: "Akshay-Eypz",
+      result: result
+    });
 
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message });
+    res.status(500).json({
+      status: false,
+      message: err.message
+    });
   }
 });
 
-app.get("/", (req, res) => res.send("Terabox API Running"));
+// Home Route to check if server is running
+app.get("/", (req, res) => {
+  res.send("Terabox Downloader API is Running...");
+});
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
